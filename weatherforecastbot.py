@@ -61,13 +61,14 @@ def get_advice(weather_category):
     return advice
 
 def get_forecast_message():
-    #Calling openweathermap API for the weather forecast data in JSON format of East Brunswick restricted to 24 hours in the future
-    forecast_payload = {'id': '5097402', 'cnt': '8', 'appid': apikey}
+    #Calling openweathermap API for the weather forecast data in JSON format restricted to 24 hours in the future, default location is East Brunswick
+    forecast_payload = {'q': 'East Brunswick', 'cnt': '8', 'appid': apikey, 'type': 'accurate'}
     forecast_request = requests.get('http://api.openweathermap.org/data/2.5/forecast?', params = forecast_payload)
     forecast = json.loads(forecast_request.text)
 
     #Gets necessary weather forecast data for tweet from API request
     city = forecast['city']['name']
+    country = forecast['country']
     forecast_unix_time = forecast['list'][4]['dt']
     forecast_time = datetime.datetime.fromtimestamp(int(forecast_unix_time)).strftime('%Y-%m-%d %H:%M:%S') #Converting from Unix time to slightly more readable format
     formatted_forecast_time = format_forecast_time(forecast_time)
@@ -79,7 +80,7 @@ def get_forecast_message():
     advice = get_advice(weather_category)
 
     #Concatenates all the weather data into a forecast message
-    message = '{} {}\n{}\nHigh: {}°F\nLow: {}°F\nAvg: {}°F\n{}\nNo Tweet=Unchanged'.format(city, formatted_forecast_time, weather, high_temp, low_temp, average_temp, advice)
+    message = '{} {}, {}\n{}\nHigh: {}°F\nLow: {}°F\nAvg: {}°F\n{}\nNo Tweet=Unchanged'.format(city, country, formatted_forecast_time, weather, high_temp, low_temp, average_temp, advice)
     return message
 
 #Allows weather bot to check if anyone told it to stop every 30 seconds while updating its forecast using threading
