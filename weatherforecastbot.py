@@ -1,7 +1,13 @@
-import tweepy, time, requests, json, datetime, string
-from credentials import * #Imports hidden credentials/API keys from a credentials.py
+import tweepy
+import time
+import requests
+import json
+import datetime
+import string
+import threading
+from credentials import * #Imports personal information/keys that should be hidden from a credentials.py
 
-#API responds in Kelvin, convert Kelvin forecast temperature to Fahrenheit
+#API temperature data response is in Kelvin, convert Kelvin temperature to Fahrenheit
 def convert_temp(kelvin_temp):
     fahrenheit_temp = 9/5*(kelvin_temp - 273) + 32
     return fahrenheit_temp
@@ -49,48 +55,89 @@ def get_advice(weather_category):
     elif weather_category == 'Clouds':
         advice = 'Wear a jacket!'
     elif weather_category == 'Extreme':
-        advice = 'Extreme weather alert!!'
+        advice = '⚠Extreme weather alert⚠'
     elif weather_category == 'Additional':
         advice = 'It\'s windy out there!'
     return advice
 
 def get_forecast_message():
-    #Calling openweathermap API for the weather forecast data in JSON of East Brunswick restricted to 24 hours in the future
+    #Calling openweathermap API for the weather forecast data in JSON format of East Brunswick restricted to 24 hours in the future
     forecast_payload = {'id': '5097402', 'cnt': '8', 'appid': apikey}
     forecast_request = requests.get('http://api.openweathermap.org/data/2.5/forecast?', params = forecast_payload)
     forecast = json.loads(forecast_request.text)
 
     #Gets necessary weather forecast data for tweet from API request
     city = forecast['city']['name']
-    forecast_unix_time = forecast['list'][0]['dt']
+    forecast_unix_time = forecast['list'][4]['dt']
     forecast_time = datetime.datetime.fromtimestamp(int(forecast_unix_time)).strftime('%Y-%m-%d %H:%M:%S') #Converting from Unix time to slightly more readable format
     formatted_forecast_time = format_forecast_time(forecast_time)
-    weather = string.capwords(forecast['list'][0]['weather'][0]['description'])
-    high_temp = float(convert_temp(forecast['list'][0]['main']['temp_max']))
-    low_temp = float(convert_temp(forecast['list'][0]['main']['temp_min']))
+    weather = string.capwords(forecast['list'][4]['weather'][0]['description'])
+    high_temp = int(convert_temp(forecast['list'][4]['main']['temp_max']))
+    low_temp = int(convert_temp(forecast['list'][4]['main']['temp_min']))
     average_temp = float((high_temp + low_temp) / 2)
-    weather_category = forecast['list'][0]['weather'][0]['main']
+    weather_category = forecast['list'][4]['weather'][0]['main']
     advice = get_advice(weather_category)
 
     #Concatenates all the weather data into a forecast message
-    message = '{} {}\n{}\nHigh: {}° F\nLow: {}° F\nAvg: {}° F\n{}\nno tweet=unchanged'.format(city, formatted_forecast_time, weather, high_temp, low_temp, average_temp, advice)
+    message = '{} {}\n{}\nHigh: {}°F\nLow: {}°F\nAvg: {}°F\n{}\nNo Tweet=Unchanged'.format(city, formatted_forecast_time, weather, high_temp, low_temp, average_temp, advice)
     return message
 
+#Allows weather bot to check if anyone told it to stop every 30 seconds while updating its forecast using threading
+class stopThread(threading.Thread):
+    def __init__(self, stop):
+        threading.Thread.__init__(self)
+        self.stop = stop
+        self.daemon = True
+    def run(self):
+        print("Starting " + self.name)
+        stop = False
+        while True:
+            mentions = api.mentions_timeline(count = 1)
+            for mention in mentions:
+                tweet_text = mention.text
+                tweet_text = tweet_text.replace(bot_twitter_handle, '')
+            tweet_text = tweet_text.upper().replace(' ', '')#Cleaning @mention tweet text
+            if tweet_text == 'STOP':
+                self.stop = True
+            print('Told to stop? ' + str(self.stop)+ ' ' + str(datetime.datetime.now()))
+            time.sleep(30)
+
+#Gets the bot to tweet the forecast
 def tweet():
-    try: #Handles exceptions where the forecast has not changed from last tweet and Tweepy gives 'Status is a duplicate.' error
+    try: #Handles exceptions where Tweepy gives some kind of error while trying to tweet
         tweet = get_forecast_message() #Call function to get the weather forecast message to tweet
-        print(tweet) #Debugging purposes
-        api.update_status(tweet) #Tweets
-        time.sleep(3600) #Wait one hour before tweeting again
+        print(tweet) #Printing text in tweet for debugging
+        print('Attempt time: ' + str(datetime.datetime.now())) #Time the bot attempted to tweet
+        api.update_status(tweet) #Tweets forecast
     except tweepy.TweepError as e:
         print(e.reason)
-        time.sleep(3600) #Wait one hour before tweeting again if it's a 'Status is duplicate.' error
 
 #Access twitter account to be able to tweet from it
 auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
 auth.set_access_token(access_token, access_token_secret)
 api = tweepy.API(auth)
 
-#Bot tweets indefinitely until process is stopped
+# Create new thread
+check_for_stop = stopThread(False)
+
+# Start the thread
+check_for_stop.start()
+twitter_user = ''
+count = 0
+tweet()
+#Bot will continue tweeting updated forecasts every 5 minutes indefinitely until someone tweets at it to stop
 while True:
-    tweet()
+    time.sleep(30)
+    if check_for_stop.stop: #Checks if the stopThread has found someone telling the bot to stop
+        break #If someone told bot to stop it shuts down
+    count += 1
+    if count == 10:
+        tweet() #Attempts to tweet every 5 minutes
+        count = 0
+
+#Comes here when bot has been told to stop tweeting forecasts
+mentions = api.mentions_timeline(count=1) #Gets most recent @mention of weather forecast bot from timeline
+
+for mention in mentions:
+    twitter_user = '@' + mention.user.screen_name #Gets the twitter handle of the user that told bot to stop
+api.update_status(twitter_user + ' killed the weather bot :(')
