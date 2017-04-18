@@ -1,5 +1,7 @@
 # weather-twitter-bot
-Tweets weather forecast for East Brunswick every two hours.
+Updates weather forecast for East Brunswick every 5 minutes and tries to tweet it.
+
+Can be shut down by tweeting 'stop' at the bot.
 
 Bot doesn't tweet if forecast is unchanged since last tweet.
 
