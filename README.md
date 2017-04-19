@@ -7,4 +7,4 @@ Can be shut down by tweeting 'stop' at the bot.
 
 Can change weather forecast location be tweeting 'location: \_\_\_\_' at the bot
 
-Bot hosted at: https://twitter.com/willwang_
+Bot hosted at: https://twitter.com/willwang\_
