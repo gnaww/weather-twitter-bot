@@ -99,7 +99,7 @@ class checkThread(threading.Thread):
                 mention_text = mention.text
                 mention_text = mention_text.replace(bot_twitter_handle + ' ', '') #Cuts out bot's twitter handle from tweet bot is mentioned in
                 self.mention_user = '@' + mention.user.screen_name
-            print(self.mention_user + ' ' + mention_text)
+            print('Most recent mention: ' + self.mention_user + ' ' + mention_text)
             if mention_text.upper() == 'STOP': #@bot stop
                 self.stop = True
             if mention_text.split(':')[0].upper() == 'LOCATION': #@bot location: _____
