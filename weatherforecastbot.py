@@ -60,55 +60,66 @@ def get_advice(weather_category):
         advice = 'It\'s windy out there!'
     return advice
 
-def get_forecast_message():
+def get_forecast_message(location):
     #Calling openweathermap API for the weather forecast data in JSON format restricted to 24 hours in the future, default location is East Brunswick
-    forecast_payload = {'q': 'East Brunswick', 'cnt': '8', 'appid': apikey, 'type': 'accurate'}
+    forecast_payload = {'q': location, 'cnt': '8', 'appid': apikey, 'type': 'accurate'}
     forecast_request = requests.get('http://api.openweathermap.org/data/2.5/forecast?', params = forecast_payload)
     forecast = json.loads(forecast_request.text)
 
     #Gets necessary weather forecast data for tweet from API request
     city = forecast['city']['name']
-    country = forecast['country']
-    forecast_unix_time = forecast['list'][4]['dt']
+    country = forecast['city']['country']
+    forecast_unix_time = forecast['list'][7]['dt']
     forecast_time = datetime.datetime.fromtimestamp(int(forecast_unix_time)).strftime('%Y-%m-%d %H:%M:%S') #Converting from Unix time to slightly more readable format
     formatted_forecast_time = format_forecast_time(forecast_time)
-    weather = string.capwords(forecast['list'][4]['weather'][0]['description'])
-    high_temp = int(convert_temp(forecast['list'][4]['main']['temp_max']))
-    low_temp = int(convert_temp(forecast['list'][4]['main']['temp_min']))
+    weather = string.capwords(forecast['list'][7]['weather'][0]['description'])
+    high_temp = int(convert_temp(forecast['list'][7]['main']['temp_max']))
+    low_temp = int(convert_temp(forecast['list'][7]['main']['temp_min']))
     average_temp = float((high_temp + low_temp) / 2)
-    weather_category = forecast['list'][4]['weather'][0]['main']
+    weather_category = forecast['list'][7]['weather'][0]['main']
     advice = get_advice(weather_category)
 
     #Concatenates all the weather data into a forecast message
-    message = '{} {}, {}\n{}\nHigh: {}°F\nLow: {}°F\nAvg: {}°F\n{}\nNo Tweet=Unchanged'.format(city, country, formatted_forecast_time, weather, high_temp, low_temp, average_temp, advice)
+    message = '{}, {} - {}\n{}\nHigh: {}°F\nLow: {}°F\nAvg: {}°F\n{}'.format(city, country, formatted_forecast_time, weather, high_temp, low_temp, average_temp, advice)
     return message
 
 #Allows weather bot to check if anyone told it to stop every 30 seconds while updating its forecast using threading
-class stopThread(threading.Thread):
+class checkThread(threading.Thread):
     def __init__(self, stop):
         threading.Thread.__init__(self)
         self.stop = stop
+        self.location = 'East Brunswick'
+        self.mention_user = ''
         self.daemon = True
     def run(self):
         print("Starting " + self.name)
-        stop = False
         while True:
             mentions = api.mentions_timeline(count = 1)
             for mention in mentions:
-                tweet_text = mention.text
-                tweet_text = tweet_text.replace(bot_twitter_handle, '')
-            tweet_text = tweet_text.upper().replace(' ', '')#Cleaning @mention tweet text
-            if tweet_text == 'STOP':
+                mention_text = mention.text
+                mention_text = mention_text.replace(bot_twitter_handle + ' ', '')
+                self.mention_user = '@' + mention.user.screen_name
+            print(self.mention_user + ' ' + mention_text)
+            if mention_text.upper() == 'STOP':
                 self.stop = True
-            print('Told to stop? ' + str(self.stop)+ ' ' + str(datetime.datetime.now()))
+            if mention_text.split(':')[0].upper() == 'LOCATION':
+                unformatted_location = mention_text.split(':')[1]
+                if unformatted_location.find(',') != -1:
+                    city_name = string.capwords(unformatted_location.split(',')[0])
+                    country_abbrev = unformatted_location.split(',')[1].upper()
+                    self.location = city_name + ',' + country_abbrev
+                    self.location.strip()
+                else:
+                    self.location = string.capwords(unformatted_location).strip()
+            print('Told to stop: ' + str(self.stop) + ' | Requested Location: ' + self.location + ' | Time: ' + str(datetime.datetime.now()))
             time.sleep(30)
 
 #Gets the bot to tweet the forecast
-def tweet():
+def tweet(location):
     try: #Handles exceptions where Tweepy gives some kind of error while trying to tweet
-        tweet = get_forecast_message() #Call function to get the weather forecast message to tweet
+        tweet = get_forecast_message(location) #Call function to get the weather forecast message to tweet
         print(tweet) #Printing text in tweet for debugging
-        print('Attempt time: ' + str(datetime.datetime.now())) #Time the bot attempted to tweet
+        print('Attempted tweet time: ' + str(datetime.datetime.now())) #Time the bot attempted to tweet
         api.update_status(tweet) #Tweets forecast
     except tweepy.TweepError as e:
         print(e.reason)
@@ -119,21 +130,30 @@ auth.set_access_token(access_token, access_token_secret)
 api = tweepy.API(auth)
 
 # Create new thread
-check_for_stop = stopThread(False)
+check_mention = checkThread(False)
 
 # Start the thread
-check_for_stop.start()
+check_mention.start()
 twitter_user = ''
+location = 'East Brunswick'
 count = 0
-tweet()
+tweet(location)
 #Bot will continue tweeting updated forecasts every 5 minutes indefinitely until someone tweets at it to stop
 while True:
     time.sleep(30)
-    if check_for_stop.stop: #Checks if the stopThread has found someone telling the bot to stop
+    if check_mention.stop: #Checks if the stopThread has found someone telling the bot to stop
         break #If someone told bot to stop it shuts down
+    if location != check_mention.location:
+        #Checking if the tweeted location change is a valid city name
+        forecast_payload = {'q': check_mention.location, 'cnt': '1', 'appid': apikey, 'type': 'accurate'}
+        forecast_request = requests.get('http://api.openweathermap.org/data/2.5/forecast?', params = forecast_payload)
+        forecast = json.loads(forecast_request.text)
+        if forecast['message'] != 'city not found':
+            location = check_mention.location
+            api.update_status(check_mention.mention_user + ' changed location to ' + check_mention.location)
     count += 1
     if count == 10:
-        tweet() #Attempts to tweet every 5 minutes
+        tweet(location) #Attempts to tweet every 5 minutes
         count = 0
 
 #Comes here when bot has been told to stop tweeting forecasts
