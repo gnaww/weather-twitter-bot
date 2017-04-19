@@ -1,8 +1,10 @@
 # weather-twitter-bot
-Updates weather forecast for East Brunswick every 5 minutes and tries to tweet it.
-
-Can be shut down by tweeting 'stop' at the bot.
+Updates the weather forecast for a requested location every 5 minutes and tries to tweet it. Default location is East Brunswick.
 
 Bot doesn't tweet if forecast is unchanged since last tweet.
 
-twitter.com/willwang_
+Can be shut down by tweeting 'stop' at the bot.
+
+Can change weather forecast location be tweeting 'location: \_\_\_\_' at the bot
+
+Bot hosted at: twitter.com/willwang_
